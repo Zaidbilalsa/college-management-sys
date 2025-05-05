@@ -52,7 +52,7 @@ export default function ReportsPage() {
     if (storedUser) {
       const userData = JSON.parse(storedUser)
       setUser(userData)
-      fetchFacultyData(userData.id)
+      fetchFacultyData(userData.facultyId || userData.id)
     }
   }, [])
 
@@ -103,6 +103,13 @@ export default function ReportsPage() {
         }
 
         setStudents(studentsMap)
+      } else {
+        // If no classes are assigned, show a message
+        toast({
+          title: "No Classes Assigned",
+          description: "You don't have any classes assigned. Please contact the administrator.",
+          variant: "destructive",
+        })
       }
 
       // Fetch reports
@@ -207,7 +214,7 @@ export default function ReportsPage() {
           {
             date: reportDate,
             student_id: student.id,
-            faculty_id: user.id,
+            faculty_id: user.facultyId || user.id,
             parent_email: student.parentEmail,
             attendance,
             cat_i: catI,

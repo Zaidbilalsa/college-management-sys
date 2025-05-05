@@ -52,7 +52,41 @@ export default function MarksPage() {
     if (storedUser) {
       const userData = JSON.parse(storedUser)
       setUser(userData)
-      fetchFacultyData(userData.id)
+
+      // Determine the correct faculty ID
+      const facultyId = userData.facultyId
+
+      // If facultyId is not available, try to get it from the database
+      if (!facultyId && userData.id && !userData.id.startsWith("demo-")) {
+        // Try to find faculty by user_id
+        const getFacultyId = async () => {
+          try {
+            const { data, error } = await supabase.from("faculty").select("id").eq("user_id", userData.id).single()
+
+            if (!error && data) {
+              // Update user data with faculty ID
+              userData.facultyId = data.id
+              setUser(userData)
+              localStorage.setItem("user", JSON.stringify(userData))
+              fetchFacultyData(data.id)
+            } else {
+              console.error("Could not find faculty record:", error)
+              toast({
+                title: "Error",
+                description: "Could not find your faculty record. Please contact administrator.",
+                variant: "destructive",
+              })
+            }
+          } catch (err) {
+            console.error("Error fetching faculty ID:", err)
+          }
+        }
+
+        getFacultyId()
+      } else {
+        // Use the available faculty ID or user ID as fallback
+        fetchFacultyData(facultyId || userData.id)
+      }
     }
   }, [])
 
@@ -64,8 +98,8 @@ export default function MarksPage() {
       const { data: facultyClasses, error: classesError } = await supabase
         .from("faculty_classes")
         .select(`
-          classes(id, name)
-        `)
+        classes(id, name)
+      `)
         .eq("faculty_id", facultyId)
 
       if (classesError) throw classesError
@@ -74,18 +108,12 @@ export default function MarksPage() {
         const classNames = facultyClasses.map((fc) => fc.classes.name)
         setClasses(classNames)
 
-        // Create a map to store class IDs
-        const classIdMap: Record<string, string> = {}
-        facultyClasses.forEach((fc) => {
-          classIdMap[fc.classes.name] = fc.classes.id
-        })
-
         // Fetch faculty's assigned subjects
         const { data: facultySubjectsData, error: subjectsError } = await supabase
           .from("faculty_subjects")
           .select(`
-            subjects(id, name)
-          `)
+          subjects(id, name)
+        `)
           .eq("faculty_id", facultyId)
 
         if (subjectsError) throw subjectsError
@@ -109,8 +137,8 @@ export default function MarksPage() {
           const { data: classStudents, error: studentsError } = await supabase
             .from("students")
             .select(`
-              id, name, roll_number, email
-            `)
+            id, name, roll_number, email
+          `)
             .eq("class_id", fc.classes.id)
 
           if (studentsError) throw studentsError
@@ -128,6 +156,13 @@ export default function MarksPage() {
         }
 
         setStudents(studentsMap)
+      } else {
+        // If no classes are assigned, show a message or use fallback data
+        toast({
+          title: "No Classes Assigned",
+          description: "You don't have any classes assigned. Please contact the administrator.",
+          variant: "destructive",
+        })
       }
 
       // Fetch marks records
@@ -278,6 +313,32 @@ export default function MarksPage() {
       const sumMarks = studentMarks.reduce((sum, item) => sum + item.marks, 0)
       const averageMarks = totalStudents > 0 ? sumMarks / totalStudents : 0
 
+      // Get the correct faculty ID
+      let facultyId = user.facultyId || user.id
+
+      // Verify faculty exists in the faculty table
+      const { data: facultyData, error: facultyError } = await supabase
+        .from("faculty")
+        .select("id")
+        .eq("id", facultyId)
+        .single()
+
+      if (facultyError) {
+        // If faculty doesn't exist with that ID, try to find by user_id
+        const { data: facultyByUser, error: facultyByUserError } = await supabase
+          .from("faculty")
+          .select("id")
+          .eq("user_id", user.id)
+          .single()
+
+        if (facultyByUserError) {
+          throw new Error("Faculty record not found. Please contact administrator.")
+        }
+
+        // Use the found faculty ID
+        facultyId = facultyByUser.id
+      }
+
       // Insert exam record
       const { data: examData, error: examError } = await supabase
         .from("exams")
@@ -287,7 +348,7 @@ export default function MarksPage() {
             date: examDate,
             class_id: classData.id,
             subject_id: subjectData.id,
-            faculty_id: user.id,
+            faculty_id: facultyId,
             total_marks: totalMarks,
           },
         ])
@@ -337,7 +398,7 @@ export default function MarksPage() {
       console.error("Error adding marks:", error)
       toast({
         title: "Error",
-        description: "Failed to record marks. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to record marks. Please try again.",
         variant: "destructive",
       })
     }
@@ -347,6 +408,21 @@ export default function MarksPage() {
     setCurrentViewRecord(record)
 
     try {
+      // For demo users, generate dummy student marks
+      if (user.id.startsWith("demo-")) {
+        const demoStudentMarks =
+          students[record.class]?.map((student) => ({
+            id: student.id,
+            name: student.name,
+            rollNumber: student.rollNumber,
+            marks: Math.floor(Math.random() * (record.totalMarks * 0.5)) + Math.floor(record.totalMarks * 0.5), // Random marks between 50% and 100%
+          })) || []
+
+        setViewStudentMarks(demoStudentMarks)
+        setIsViewDialogOpen(true)
+        return
+      }
+
       // Fetch student marks for this exam
       const { data, error } = await supabase
         .from("marks")
@@ -382,6 +458,18 @@ export default function MarksPage() {
     if (!confirm("Are you sure you want to delete this marks record?")) return
 
     try {
+      // For demo users, just remove from local state
+      if (user.id.startsWith("demo-") || id.startsWith("demo-")) {
+        setMarksRecords(marksRecords.filter((record) => record.id !== id))
+
+        toast({
+          title: "Success",
+          description: "Marks record deleted successfully (Demo Mode)",
+        })
+
+        return
+      }
+
       // Delete marks records first
       const { error: marksError } = await supabase.from("marks").delete().eq("exam_id", id)
 

@@ -11,23 +11,29 @@ export default function StudentLoginPage() {
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
 
+  // Fix the handleLogin function to properly handle login
   const handleLogin = async (rollNumber: string, dob: string) => {
     setIsLoading(true)
     try {
+      // Format the date to ensure consistency (YYYY-MM-DD)
+      const formattedDob = new Date(dob).toISOString().split("T")[0]
+
       // Attempt to sign in with student credentials
-      const { user, student } = await studentLogin(rollNumber, dob)
+      const userData = await studentLogin(rollNumber, formattedDob)
+
+      const { user, student } = userData
 
       // Store user info in localStorage
       localStorage.setItem(
         "user",
         JSON.stringify({
           id: user.id,
-          role: user.role,
-          email: user.email,
-          name: user.name,
+          role: "student",
+          email: user.email || student.email,
+          name: user.name || student.name,
           studentId: student.id,
           rollNumber: student.roll_number,
-          class: student.classes.name,
+          class: student.classes?.name || "",
           department: student.department,
         }),
       )
@@ -36,7 +42,11 @@ export default function StudentLoginPage() {
       router.push("/dashboard/student")
     } catch (error) {
       console.error("Login error:", error)
-      throw new Error("Invalid credentials. Please check your roll number and date of birth.")
+      toast({
+        title: "Error",
+        description: "Invalid credentials. Please check your roll number and date of birth.",
+        variant: "destructive",
+      })
     } finally {
       setIsLoading(false)
     }

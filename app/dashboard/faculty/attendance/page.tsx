@@ -70,6 +70,7 @@ export default function AttendancePage() {
 
   // Fetch faculty data (classes, subjects)
   const fetchFacultyData = async (facultyId: string) => {
+    console.log("Faculty ID being used:", facultyId)
     setIsLoading(true)
     try {
       // Fetch faculty's assigned classes
@@ -362,7 +363,10 @@ export default function AttendancePage() {
         .eq("name", selectedClass)
         .single()
 
-      if (classError) throw classError
+      if (classError) {
+        console.error("Class error:", classError)
+        throw new Error(`Failed to get class ID: ${classError.message}`)
+      }
 
       // Get subject ID
       const { data: subjectData, error: subjectError } = await supabase
@@ -371,7 +375,10 @@ export default function AttendancePage() {
         .eq("name", selectedSubject)
         .single()
 
-      if (subjectError) throw subjectError
+      if (subjectError) {
+        console.error("Subject error:", subjectError)
+        throw new Error(`Failed to get subject ID: ${subjectError.message}`)
+      }
 
       // Calculate average attendance
       const totalStudents = studentAttendance.length
@@ -383,16 +390,52 @@ export default function AttendancePage() {
       )
       const avgOdDays = Math.round(studentAttendance.reduce((sum, student) => sum + student.odDays, 0) / totalStudents)
 
+      // First, check if the faculty exists in the faculty table
+      let facultyId = user?.facultyId || user?.id
+      console.log("User object:", user)
+      console.log("Attempting to use faculty ID:", facultyId)
+
+      // Check if the faculty ID exists in the faculty table
+      const { data: facultyData, error: facultyError } = await supabase
+        .from("faculty")
+        .select("id")
+        .eq("id", facultyId)
+        .single()
+
+      if (facultyError) {
+        console.error("Faculty check error:", facultyError)
+
+        // If faculty doesn't exist with the current ID, try to find the faculty by email
+        if (user?.email) {
+          const { data: facultyByEmail, error: emailError } = await supabase
+            .from("faculty")
+            .select("id")
+            .eq("email", user.email)
+            .single()
+
+          if (!emailError && facultyByEmail) {
+            facultyId = facultyByEmail.id
+            console.log("Found faculty by email, using ID:", facultyId)
+          } else {
+            console.error("Could not find faculty by email:", emailError)
+            throw new Error("Your faculty account is not properly set up. Please contact an administrator.")
+          }
+        } else {
+          throw new Error("Faculty ID not found. Please log out and log back in.")
+        }
+      }
+
       // Insert attendance record
       const { data: attendanceData, error: attendanceError } = await supabase
         .from("attendance")
         .insert([
           {
+            date: `${selectedYear}-${months.indexOf(selectedMonth) + 1}-01`, // Add proper date in YYYY-MM-DD format
             month: selectedMonth,
             year: selectedYear,
             class_id: classData.id,
             subject_id: subjectData.id,
-            faculty_id: user.id,
+            faculty_id: facultyId, // Use the verified faculty ID
             working_days: workingDays,
             present_days: avgPresentDays,
             absent_days: avgAbsentDays,
@@ -401,7 +444,14 @@ export default function AttendancePage() {
         ])
         .select()
 
-      if (attendanceError) throw attendanceError
+      if (attendanceError) {
+        console.error("Attendance insert error:", attendanceError)
+        throw new Error(`Failed to insert attendance: ${attendanceError.message}`)
+      }
+
+      if (!attendanceData || attendanceData.length === 0) {
+        throw new Error("No attendance data returned after insert")
+      }
 
       // Insert individual student attendance records
       for (const student of studentAttendance) {
@@ -415,7 +465,10 @@ export default function AttendancePage() {
           },
         ])
 
-        if (studentAttendanceError) throw studentAttendanceError
+        if (studentAttendanceError) {
+          console.error("Student attendance error:", studentAttendanceError)
+          throw new Error(`Failed to insert student attendance: ${studentAttendanceError.message}`)
+        }
       }
 
       // Add to local state
@@ -445,10 +498,10 @@ export default function AttendancePage() {
         description: "Attendance recorded successfully",
       })
     } catch (error) {
-      console.error("Error adding attendance:", error)
+      console.error("Error adding attendance:", error instanceof Error ? error.message : error)
       toast({
         title: "Error",
-        description: "Failed to record attendance. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to record attendance. Please try again.",
         variant: "destructive",
       })
     }
@@ -518,6 +571,7 @@ export default function AttendancePage() {
       const { error: attendanceError } = await supabase
         .from("attendance")
         .update({
+          date: `${selectedYear}-${months.indexOf(selectedMonth) + 1}-01`, // Add proper date in YYYY-MM-DD format
           working_days: workingDays,
           present_days: avgPresentDays,
           absent_days: avgAbsentDays,

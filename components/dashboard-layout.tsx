@@ -89,16 +89,16 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     ],
     student: [
       { label: "Dashboard", href: "/dashboard/student", icon: BarChart },
-      { label: "Attendance", href: "/dashboard/student/attendance", icon: Calendar },
-      { label: "Marks", href: "/dashboard/student/marks", icon: BarChart },
-      { label: "Profile", href: "/dashboard/student/profile", icon: User },
+      // { label: "Attendance", href: "/dashboard/student/attendance", icon: Calendar },
+      // { label: "Marks", href: "/dashboard/student/marks", icon: BarChart },
+      // { label: "Profile", href: "/dashboard/student/profile", icon: User },
     ],
     parent: [
       { label: "Dashboard", href: "/dashboard/parent", icon: BarChart },
-      { label: "Child's Attendance", href: "/dashboard/parent/attendance", icon: Calendar },
-      { label: "Child's Marks", href: "/dashboard/parent/marks", icon: BarChart },
-      { label: "Behavior Reports", href: "/dashboard/parent/reports", icon: BarChart },
-      { label: "Profile", href: "/dashboard/parent/profile", icon: User },
+    //   { label: "Child's Attendance", href: "/dashboard/parent/attendance", icon: Calendar },
+    //   { label: "Child's Marks", href: "/dashboard/parent/marks", icon: BarChart },
+    //   { label: "Behavior Reports", href: "/dashboard/parent/reports", icon: BarChart },
+    //   { label: "Profile", href: "/dashboard/parent/profile", icon: User },
     ],
   }
 

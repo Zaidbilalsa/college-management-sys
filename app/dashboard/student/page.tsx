@@ -28,54 +28,39 @@ export default function StudentDashboard() {
   useEffect(() => {
     // Get user data from localStorage
     const storedUser = localStorage.getItem("user")
-    const storedStudent = localStorage.getItem("student")
 
     if (storedUser) {
       const userData = JSON.parse(storedUser)
       setUser(userData)
-
-      if (storedStudent) {
-        const studentData = JSON.parse(storedStudent)
-        setStudent(studentData)
-      }
-
-      // If it's a demo user, load demo data
-      if (userData.id.startsWith("demo-")) {
-        loadDemoData()
-      } else {
-        fetchStudentData(userData.id)
-      }
+      setStudent(userData)
+      fetchStudentData(userData.studentId)
     }
 
     setLoading(false)
   }, [])
 
-  // Load demo data for testing
-  const loadDemoData = () => {
-    // Demo stats
-    const demoStats = {
-      attendance: "92%",
-      subjects: 6,
-      upcomingExams: [
-        { name: "CAT II", date: "2025-05-20", subject: "Data Structures" },
-        { name: "CAT II", date: "2025-05-22", subject: "Database Management" },
-        { name: "CAT II", date: "2025-05-25", subject: "Web Development" },
-        { name: "Model Exam", date: "2025-06-15", subject: "Data Structures" },
-      ],
-      recentMarks: [
-        { exam: "CAT I", subject: "Data Structures", marks: "45/50", percentage: 90 },
-        { exam: "CAT I", subject: "Database Management", marks: "42/50", percentage: 84 },
-        { exam: "CAT I", subject: "Web Development", marks: "47/50", percentage: 94 },
-        { exam: "CAT I", subject: "Computer Networks", marks: "40/50", percentage: 80 },
-      ],
-    }
-
-    setStats(demoStats)
-  }
-
-  // Fetch student data from database
+  // Update the fetchStudentData function to properly fetch student data
   const fetchStudentData = async (studentId: string) => {
     try {
+      // Fetch student details including class
+      const { data: studentData, error: studentError } = await supabase
+        .from("students")
+        .select(`
+          *,
+          classes(*)
+        `)
+        .eq("id", studentId)
+        .single()
+
+      if (studentError) throw studentError
+
+      if (studentData) {
+        setStudent({
+          ...studentData,
+          classes: studentData.classes,
+        })
+      }
+
       // Fetch attendance
       const { data: attendanceData, error: attendanceError } = await supabase
         .from("attendance_records")
@@ -89,19 +74,19 @@ export default function StudentDashboard() {
         `)
         .eq("student_id", studentId)
 
-      if (!attendanceError && attendanceData) {
-        // Calculate overall attendance percentage
-        const totalRecords = attendanceData.length
-        const presentRecords = attendanceData.filter(
-          (record) => record.status === "present" || record.status === "od",
-        ).length
-        const percentage = totalRecords > 0 ? Math.round((presentRecords / totalRecords) * 100) : 0
+      if (attendanceError) throw attendanceError
 
-        setStats((prev) => ({
-          ...prev,
-          attendance: `${percentage}%`,
-        }))
-      }
+      // Calculate overall attendance percentage
+      const totalRecords = attendanceData.length
+      const presentRecords = attendanceData.filter(
+        (record) => record.status === "present" || record.status === "od",
+      ).length
+      const percentage = totalRecords > 0 ? Math.round((presentRecords / totalRecords) * 100) : 0
+
+      setStats((prev) => ({
+        ...prev,
+        attendance: `${percentage}%`,
+      }))
 
       // Fetch marks
       const { data: marksData, error: marksError } = await supabase
@@ -117,7 +102,9 @@ export default function StudentDashboard() {
         `)
         .eq("student_id", studentId)
 
-      if (!marksError && marksData) {
+      if (marksError) throw marksError
+
+      if (marksData && marksData.length > 0) {
         const recentMarks = marksData.map((mark) => {
           return {
             exam: mark.exams.name,
@@ -133,12 +120,56 @@ export default function StudentDashboard() {
         }))
       }
 
-      // Fetch upcoming exams (this would be from a different table in a real app)
-      // For now, we'll use the demo data
+      // Fetch subjects count
+      const { data: classData, error: classError } = await supabase
+        .from("students")
+        .select(`
+          classes(
+            subjects(id)
+          )
+        `)
+        .eq("id", studentId)
+        .single()
+
+      if (classError) throw classError
+
+      if (classData && classData.classes && classData.classes.subjects) {
+        setStats((prev) => ({
+          ...prev,
+          subjects: classData.classes.subjects.length,
+        }))
+      }
+
+      // Fetch upcoming exams
+      const { data: examData, error: examError } = await supabase
+        .from("exams")
+        .select(`
+          name,
+          date,
+          subjects(name),
+          classes(id)
+        `)
+        .gt("date", new Date().toISOString())
+        .order("date", { ascending: true })
+        .limit(4)
+
+      if (examError) throw examError
+
+      if (examData) {
+        const upcomingExams = examData.map((exam) => ({
+          name: exam.name,
+          date: exam.date,
+          subject: exam.subjects.name,
+        }))
+
+        setStats((prev) => ({
+          ...prev,
+          upcomingExams,
+        }))
+      }
     } catch (error) {
       console.error("Error fetching student data:", error)
-      // Fallback to demo data
-      loadDemoData()
+      // Keep the default stats if there's an error
     }
   }
 
@@ -190,7 +221,7 @@ export default function StudentDashboard() {
               <CardDescription className="text-white/80">Your current class</CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
-              <p className="text-3xl font-bold">{student?.classes?.name || "Second Year B"}</p>
+              <p className="text-3xl font-bold">{student?.classes?.name || "Loading..."}</p>
             </CardContent>
           </Card>
 
